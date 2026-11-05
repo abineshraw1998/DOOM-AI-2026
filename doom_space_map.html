@@ -1,0 +1,187 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DOOM AI Space Tracking</title>
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;
+ background:#091322;
+ color:white;
+ font-family:Arial,sans-serif;
+}
+header{
+ padding:15px;
+ background:#17263a;
+}
+h2{
+ margin:0;
+ color:#38bdf8;
+}
+p{line-height:1.5}
+#map{
+ height:74vh;
+ background:#10263c;
+}
+#info{
+ padding:12px;
+ line-height:1.6;
+}
+a{color:#7dd3fc}
+</style>
+</head>
+<body>
+
+<header>
+<h2>DOOM AI | ISS & Satellite Tracking</h2>
+<p>
+ISS: latest reported coordinates |
+Satellites: calculated positions |
+ISS updates every 15 seconds
+</p>
+</header>
+
+<div id="map"></div>
+<div id="info">Loading position data...</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const info = document.getElementById("info");
+
+let map;
+let issMarker;
+let otherMarkers = [];
+
+if (typeof L === "undefined") {
+ info.textContent =
+  "Map library unavailable. Check your internet connection.";
+} else {
+
+ map = L.map("map", {
+  worldCopyJump: true
+ }).setView([20, 0], 2);
+
+ L.tileLayer(
+  "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {
+   attribution:
+    "&copy; OpenStreetMap contributors &copy; CARTO",
+   maxZoom: 18
+  }
+ ).addTo(map);
+
+ async function updateISS() {
+  try {
+   const response = await fetch("/api/iss", {
+    cache: "no-store"
+   });
+
+   if (!response.ok) {
+    throw Error("ISS service unavailable");
+   }
+
+   const data = await response.json();
+
+   const position = [
+    data.latitude,
+    data.longitude
+   ];
+
+   if (!issMarker) {
+    issMarker = L.marker(position).addTo(map);
+    map.setView(position, 3);
+   } else {
+    issMarker.setLatLng(position);
+   }
+
+   issMarker.bindPopup(
+    "International Space Station" +
+    "<br>Altitude: " +
+    data.altitude.toFixed(1) +
+    " km"
+   );
+
+   info.textContent =
+    "ISS latitude: " +
+    data.latitude.toFixed(4) +
+    "° | Longitude: " +
+    data.longitude.toFixed(4) +
+    "° | Altitude: " +
+    data.altitude.toFixed(1) +
+    " km | Speed: " +
+    data.velocity.toFixed(0) +
+    " km/h | Data time: " +
+    new Date(
+     data.timestamp * 1000
+    ).toISOString();
+
+  } catch (error) {
+   info.textContent =
+    "ISS update failed: " +
+    error.message +
+    ". Retrying automatically.";
+  }
+ }
+
+ async function updateSatellites() {
+  try {
+   const response = await fetch("/api/satellites");
+
+   if (!response.ok) return;
+
+   const data = await response.json();
+
+   otherMarkers.forEach(marker => {
+    map.removeLayer(marker);
+   });
+
+   otherMarkers = [];
+
+   data.items.forEach(satellite => {
+
+    if (
+     satellite.name.toUpperCase().includes("ISS")
+    ) return;
+
+    const marker = L.circleMarker(
+     [satellite.lat, satellite.lon],
+     {
+      radius: 5,
+      color: "#fbbf24",
+      fillOpacity: 0.8
+     }
+    ).addTo(map);
+
+    marker.bindPopup(
+     satellite.name +
+     "<br>Estimated altitude: " +
+     satellite.alt.toFixed(0) +
+     " km"
+    );
+
+    otherMarkers.push(marker);
+   });
+
+  } catch (error) {
+   console.warn(
+    "Satellite positions unavailable",
+    error
+   );
+  }
+ }
+
+ updateISS();
+ updateSatellites();
+
+ setInterval(updateISS, 15000);
+ setInterval(updateSatellites, 120000);
+}
+</script>
+
+</body>
+</html>
